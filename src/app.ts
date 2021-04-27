@@ -3,22 +3,46 @@ import dotenv from "dotenv";
 import path from "path"
 dotenv.config()
 import { ApiError } from "./error/apiError"
-import Cors from "cors"
+import cors from "cors"
+import { Request, Response, NextFunction } from "express"
 import friendsRoutes from "./routes/friendRoutesAuth";
+import { graphqlHTTP } from 'express-graphql';
+import { schema } from './graphql/schema';
+import authMiddleware from "./middleware/basic-auth"
 
 const debug = require("debug")("app")
-import { Request, Response, NextFunction } from "express"
-
 
 const app = express()
 
 app.use(express.json())
+const USE_AUTHENTICATION = !process.env["SKIP_AUTHENTICATION"];
+app.use(cors())
 app.use("/api/friends", friendsRoutes);
 //SIMPLE LOGGER
 //Please verify whether this works (requires app in your DEBUG variable, like DEBUG=www,app)
 //If not replace with a console.log statement, or better the "advanced logger" refered to in the exercises
 app.use((req, res, next) => {
   debug(new Date().toLocaleDateString(), req.method, req.originalUrl, req.ip)
+  next()
+})
+//app.use("/graphql", authMiddleware)
+app.use('/graphql', graphqlHTTP({
+  schema: schema,
+  graphiql: true,
+}));
+
+app.use("/graphql", (req, res, next) => {
+  const body = req.body;
+  if (body && body.query && body.query.includes("createFriend")) {
+    console.log("Create")
+    return next();
+  }
+  if (body && body.operationName && body.query.includes("IntrospectionQuery")) {
+    return next();
+  }
+  if (body.query && USE_AUTHENTICATION && (body.mutation || body.query)) {
+    return authMiddleware(req, res, next)
+  }
   next()
 })
 
